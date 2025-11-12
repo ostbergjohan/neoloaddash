@@ -1,0 +1,115 @@
+# Multi-stage build for Spring Boot Application
+# Build stage
+FROM registry.access.redhat.com/ubi9/openjdk-21:latest AS builder
+USER root
+
+# Install build tools
+RUN microdnf update -y && \
+    microdnf install -y gzip tar && \
+    microdnf clean all
+
+WORKDIR /build
+
+# Copy Maven wrapper and pom.xml first (for better layer caching)
+COPY mvnw ./
+COPY .mvn ./.mvn
+COPY pom.xml ./
+
+# Fix line endings and make Maven wrapper executable
+RUN sed -i 's/\r$//' ./mvnw && chmod +x ./mvnw
+
+# Download dependencies (cached layer if pom.xml unchanged)
+RUN ./mvnw dependency:go-offline -B
+
+# Copy source code
+COPY src ./src
+
+# Build the application with verification
+RUN ./mvnw clean package -DskipTests && \
+    echo "=== Build Output ===" && \
+    ls -lah target/ && \
+    echo "=== Finding JAR files ===" && \
+    find target/ -name "*.jar" -type f && \
+    echo "=== Copying JAR ===" && \
+    JAR_FILE=$(find target/ -name "*.jar" -type f ! -name "*-original.jar" | head -n 1) && \
+    if [ -z "$JAR_FILE" ]; then \
+        echo "ERROR: No JAR file found in target/"; \
+        exit 1; \
+    fi && \
+    cp "$JAR_FILE" app.jar && \
+    echo "✓ Copied: $JAR_FILE" && \
+    ls -lh app.jar && \
+    echo "=== Verifying Spring Boot JAR ===" && \
+    jar tf app.jar | head -20 && \
+    if jar tf app.jar | grep -q "BOOT-INF"; then \
+        echo "✓ Valid Spring Boot JAR structure detected"; \
+    else \
+        echo "ERROR: Not a Spring Boot executable JAR (missing BOOT-INF)"; \
+        echo "Check that spring-boot-maven-plugin is configured in pom.xml"; \
+        exit 1; \
+    fi
+
+# Runtime stage
+FROM registry.access.redhat.com/ubi9/openjdk-21-runtime:latest
+
+# Metadata
+LABEL maintainer="testplattformar" \
+      version="1.0.0" \
+      description="Test Data Generator" \
+      java.version="21" \
+      spring-boot.version="3.4.4"
+
+USER root
+
+# Security updates and cleanup
+RUN microdnf update -y && \
+    microdnf install -y python3 python3-pip && \
+    microdnf clean all && \
+    rm -rf /var/cache/yum /tmp/* /var/tmp/*
+
+# Create application directory structure
+RUN mkdir -p /opt/app/data /opt/app/logs && \
+    chown -R 1001:0 /opt/app && \
+    chmod -R 775 /opt/app
+
+WORKDIR /opt/app
+
+# Copy JAR from builder stage
+COPY --from=builder --chown=1001:0 /build/app.jar ./neoloadStat.jar
+
+# Verify JAR was copied successfully
+RUN if [ ! -f neoloadStat.jar ]; then \
+        echo "ERROR: JAR file not found after copy"; \
+        exit 1; \
+    fi && \
+    ls -lh neoloadStat.jar && \
+    chmod 444 neoloadStat.jar
+
+# Switch to non-root user
+USER 1001
+
+# Expose application port
+EXPOSE 8080
+
+# Health check endpoint
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+# JVM Configuration optimized for containers
+ENV JAVA_OPTS="-XX:+UseContainerSupport \
+               -XX:MaxRAMPercentage=75.0 \
+               -XX:InitialRAMPercentage=50.0 \
+               -XX:+UseG1GC \
+               -XX:MaxGCPauseMillis=200 \
+               -XX:+ExitOnOutOfMemoryError \
+               -XX:+HeapDumpOnOutOfMemoryError \
+               -XX:HeapDumpPath=/opt/app/logs/heapdump.hprof \
+               -Djava.security.egd=file:/dev/./urandom \
+               -Dspring.output.ansi.enabled=always \
+               -Dfile.encoding=UTF-8"
+
+# Volumes for persistence and logs
+VOLUME ["/opt/app/data", "/opt/app/logs"]
+
+# Run the application
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar neoloadStat.jar"]
