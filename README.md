@@ -1,5 +1,9 @@
 # NeoLoad Performance Dashboard
 
+![Dashboard (last 7 days)](https://raw.githubusercontent.com/ostbergjohan/neoloaddash/main/neoloadstat-frontend/screenshot/dashboard_days%3D7.png)
+
+![Dashboard overview](https://raw.githubusercontent.com/ostbergjohan/neoloaddash/main/neoloadstat-frontend/screenshot/dasboard.png)
+
 A full-stack solution for monitoring and analyzing NeoLoad performance test results in real-time. This project consists of a Spring Boot backend API and two specialized React dashboards.
 
 ## 📁 Project Structure
