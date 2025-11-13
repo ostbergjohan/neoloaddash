@@ -20,7 +20,7 @@ import {
 import { useSearchParams } from "react-router-dom";
 
 const API_BASE_URL =
-    "https://neoloadstat-af-neoload-acc.apps.tocp4.arbetsformedlingen.se/test-statistics";
+    "https://change.me/test-statistics";
 
 const OrgPerformanceDashboard = () => {
     const [data, setData] = useState(null);
