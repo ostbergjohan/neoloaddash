@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { TrendingUp, TrendingDown, Activity, CheckCircle, XCircle, AlertTriangle, Download, Filter } from "lucide-react";
 
 const API_BASE_URL = "https://change.me/test-statistics";
@@ -8,12 +8,13 @@ const TestStatsDashboard = () => {
     const [data, setData] = useState(null);
     const [selectedWorkspace, setSelectedWorkspace] = useState("all");
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);ch
+    const [error, setError] = useState(null);
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
     const [excludedWorkspaces, setExcludedWorkspaces] = useState([]);
     const [pendingExclusions, setPendingExclusions] = useState([]);
     const [expandedWorkspace, setExpandedWorkspace] = useState(null);
+    const [selectedStatusFilter, setSelectedStatusFilter] = useState(null);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -94,13 +95,58 @@ const TestStatsDashboard = () => {
 
     const exportCSV = () => {
         if (!workspaceData || workspaceData.length === 0) return;
-        const headers = ["Workspace", "Total Runs", "Passed", "Failed", "Pass Rate", "Status"];
-        const rows = workspaceData.map((w) => [`"${w.name}"`, w.total, w.passed, w.failed, w.passRate + '%', w.status.charAt(0).toUpperCase() + w.status.slice(1)]);
+
+        // Create detailed CSV with workspace and test information
+        const headers = ["Workspace", "Workspace Total Runs", "Workspace Passed", "Workspace Failed", "Workspace Pass Rate", "Workspace Status", "Test Project", "Test Scenario", "Test Total Runs", "Test Passed", "Test Failed", "Test Pass Rate", "Test Status"];
+        const rows = [];
+
+        // Iterate through workspaces and their tests
+        workspaceData.forEach((ws) => {
+            const workspace = data.workspaces.find(w => w.workspaceId === ws.id);
+            if (workspace && workspace.tests && workspace.tests.length > 0) {
+                workspace.tests.forEach((test) => {
+                    const testStatus = getTestStatus(test.passRate);
+                    rows.push([
+                        `"${ws.name}"`,
+                        ws.total,
+                        ws.passed,
+                        ws.failed,
+                        ws.passRate + '%',
+                        ws.status.charAt(0).toUpperCase() + ws.status.slice(1),
+                        `"${test.project}"`,
+                        `"${test.scenario}"`,
+                        test.totalRuns,
+                        test.passed,
+                        test.failed,
+                        test.passRate,
+                        testStatus.charAt(0).toUpperCase() + testStatus.slice(1)
+                    ]);
+                });
+            } else {
+                // If no tests, still add workspace summary
+                rows.push([
+                    `"${ws.name}"`,
+                    ws.total,
+                    ws.passed,
+                    ws.failed,
+                    ws.passRate + '%',
+                    ws.status.charAt(0).toUpperCase() + ws.status.slice(1),
+                    "N/A",
+                    "N/A",
+                    "N/A",
+                    "N/A",
+                    "N/A",
+                    "N/A",
+                    "N/A"
+                ]);
+            }
+        });
+
         const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
         const encodedUri = encodeURI(csvContent);
         const link = document.createElement("a");
         link.setAttribute("href", encodedUri);
-        link.setAttribute("download", "workspace_performance_report.csv");
+        link.setAttribute("download", "workspace_performance_detailed_report.csv");
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -170,6 +216,19 @@ const TestStatsDashboard = () => {
     ].filter(item => item.value > 0);
 
     const overallStatus = parseFloat(passRate) >= 90 ? 'excellent' : parseFloat(passRate) >= 70 ? 'good' : parseFloat(passRate) >= 50 ? 'attention' : 'critical';
+
+    const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+        const RADIAN = Math.PI / 180;
+        const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+        const x = cx + radius * Math.cos(-midAngle * RADIAN);
+        const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+        return (
+            <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" style={{ fontSize: '14px', fontWeight: 'bold' }}>
+                {`${(percent * 100).toFixed(0)}%`}
+            </text>
+        );
+    };
 
     return (
         <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #f8fafc 100%)', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -251,31 +310,91 @@ const TestStatsDashboard = () => {
                                 const Icon = item.icon;
                                 const badge = getStatusBadge(item.status);
                                 const count = statusSummary[item.status];
+                                const isSelected = selectedStatusFilter === item.status;
+                                const workspacesInStatus = workspaceData.filter(w => w.status === item.status);
                                 return (
-                                    <div key={item.status} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', backgroundColor: badge.bg, borderRadius: '8px', border: `1px solid ${getStatusColor(item.status)}20` }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                            <Icon style={{ width: '20px', height: '20px', color: getStatusColor(item.status) }} />
-                                            <div>
-                                                <p style={{ fontSize: '0.875rem', fontWeight: '600', color: badge.color }}>{item.label}</p>
-                                                <p style={{ fontSize: '0.75rem', color: '#64748b' }}>{item.desc}</p>
+                                    <div key={item.status}>
+                                        <div
+                                            onClick={() => setSelectedStatusFilter(isSelected ? null : item.status)}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                padding: '16px',
+                                                backgroundColor: badge.bg,
+                                                borderRadius: '8px',
+                                                border: `2px solid ${isSelected ? getStatusColor(item.status) : getStatusColor(item.status) + '20'}`,
+                                                cursor: count > 0 ? 'pointer' : 'default',
+                                                transition: 'all 0.2s',
+                                                opacity: count === 0 ? 0.6 : 1
+                                            }}
+                                            onMouseOver={(e) => { if (count > 0) e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                                            onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(0)'; }}
+                                        >
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                <Icon style={{ width: '20px', height: '20px', color: getStatusColor(item.status) }} />
+                                                <div>
+                                                    <p style={{ fontSize: '0.875rem', fontWeight: '600', color: badge.color }}>{item.label}</p>
+                                                    <p style={{ fontSize: '0.75rem', color: '#64748b' }}>{item.desc}</p>
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: badge.color, minWidth: '40px', textAlign: 'right' }}>{count}</div>
+                                                {count > 0 && <span style={{ fontSize: '0.875rem', color: '#64748b' }}>{isSelected ? '▼' : '▶'}</span>}
                                             </div>
                                         </div>
-                                        <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: badge.color, minWidth: '40px', textAlign: 'right' }}>{count}</div>
+                                        {isSelected && workspacesInStatus.length > 0 && (
+                                            <div style={{ marginTop: '8px', padding: '12px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                                <p style={{ fontSize: '0.75rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase', marginBottom: '8px' }}>
+                                                    Workspaces in this category:
+                                                </p>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                    {workspacesInStatus.map((ws) => (
+                                                        <div key={ws.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', backgroundColor: '#fff', borderRadius: '6px', fontSize: '0.875rem' }}>
+                                                            <span style={{ color: '#1e293b', fontWeight: '500' }}>{ws.name}</span>
+                                                            <span style={{ color: getStatusColor(item.status), fontWeight: '600' }}>{ws.passRate}%</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}
                         </div>
                     </div>
-                    <div style={{ backgroundColor: '#fff', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '1px solid #e2e8f0', padding: '32px' }}>
-                        <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '16px', textAlign: 'center' }}>Status Distribution</h2>
-                        <ResponsiveContainer width="100%" height={250}>
-                            <PieChart>
-                                <Pie data={pieData} cx="50%" cy="50%" labelLine={false} label={(entry) => `${entry.name}: ${entry.value}`} outerRadius={80} dataKey="value">
-                                    {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                                </Pie>
-                                <Tooltip />
-                            </PieChart>
-                        </ResponsiveContainer>
+                    <div style={{ backgroundColor: '#fff', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', border: '1px solid #e2e8f0', padding: '32px', display: 'flex', flexDirection: 'column' }}>
+                        <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '24px', textAlign: 'center' }}>Status Distribution</h2>
+                        <div style={{ flex: 1, minHeight: '350px' }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={pieData}
+                                        cx="50%"
+                                        cy="50%"
+                                        labelLine={false}
+                                        label={renderCustomLabel}
+                                        outerRadius="80%"
+                                        dataKey="value"
+                                        animationBegin={0}
+                                        animationDuration={800}
+                                    >
+                                        {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                                    </Pie>
+                                    <Tooltip />
+                                    <Legend
+                                        verticalAlign="bottom"
+                                        height={36}
+                                        iconType="circle"
+                                        formatter={(value, entry) => (
+                                            <span style={{ color: '#1e293b', fontSize: '0.875rem', fontWeight: '500' }}>
+                                                {value}: {entry.payload.value}
+                                            </span>
+                                        )}
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
                     </div>
                 </div>
 
@@ -290,9 +409,6 @@ const TestStatsDashboard = () => {
                             <thead style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                             <tr>
                                 <th style={{ padding: '16px 32px', textAlign: 'left', fontSize: '0.75rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Workspace</th>
-                                <th style={{ padding: '16px 24px', textAlign: 'center', fontSize: '0.75rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Total Runs</th>
-                                <th style={{ padding: '16px 24px', textAlign: 'center', fontSize: '0.75rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Passed</th>
-                                <th style={{ padding: '16px 24px', textAlign: 'center', fontSize: '0.75rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Failed</th>
                                 <th style={{ padding: '16px 24px', textAlign: 'center', fontSize: '0.75rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Pass Rate</th>
                                 <th style={{ padding: '16px 32px', textAlign: 'center', fontSize: '0.75rem', fontWeight: '600', color: '#64748b', textTransform: 'uppercase' }}>Status</th>
                             </tr>
@@ -333,10 +449,14 @@ const TestStatsDashboard = () => {
                                                                 const testStatus = getTestStatus(test.passRate);
                                                                 const testBadge = getStatusBadge(testStatus);
                                                                 return (
-                                                                    <div key={testIndex} style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', gap: '16px', alignItems: 'center' }}>
+                                                                    <div key={testIndex} style={{ backgroundColor: '#fff', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: '16px', alignItems: 'center' }}>
                                                                         <div>
                                                                             <p style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1e293b', marginBottom: '2px' }}>{test.scenario}</p>
                                                                             <p style={{ fontSize: '0.75rem', color: '#64748b' }}>{test.project}</p>
+                                                                        </div>
+                                                                        <div style={{ textAlign: 'center' }}>
+                                                                            <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '2px' }}>Total Runs</p>
+                                                                            <p style={{ fontSize: '0.875rem', fontWeight: '600', color: '#1e293b' }}>{test.totalRuns}</p>
                                                                         </div>
                                                                         <div style={{ textAlign: 'center' }}>
                                                                             <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '2px' }}>Failed</p>
