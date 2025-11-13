@@ -44,12 +44,16 @@ Connects to your NeoLoad API, aggregates test results across workspaces, and pre
 - URL parameter for time range: `?days=7` (default: 30)
 - No scrolling required - optimized for 1920×1080 displays
 
+**URL Parameters:**
+- `?days=7` – Show data from last ex 7 days (default: 30)
+- `?dark=true` – Enable dark mode (default: light)
+
 **Best for:**
 - Team area monitors
 - War room displays
 - Quick status checks
 
-### Management Dashboard (`/management`)
+### Management Dashboard (`/`)
 
 **Purpose:** Detailed analysis and reporting
 
