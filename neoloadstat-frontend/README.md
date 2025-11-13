@@ -38,6 +38,13 @@ A detailed analysis and reporting tool for management and stakeholders.
 - Date range filtering
 - Workspace exclusion filters
 - Complete test breakdowns
+- Expandable Workspace Rows**: Click any workspace to expand/collapse 
+- Arrow Indicator**: Rotates when expanded
+- Test Details View**: Shows all tests with:
+    - Scenario name and project
+    - Total runs, passed, failed counts
+    - Pass rate and status badge
+
 
 **Best For:**
 - Management reviews
